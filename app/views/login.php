@@ -64,20 +64,8 @@
                 </button>
             </form>
 
-            <div class="divider my-4 text-xs text-base-content/40">ข้อมูลบัญชีเริ่มต้น</div>
-            <div class="bg-base-200/50 p-3 rounded-lg text-xs space-y-1 text-base-content/80 border border-base-300">
-                <div class="flex justify-between items-center">
-                    <span>👑 ผู้จัดการ (Manager):</span>
-                    <span class="font-mono bg-base-100 px-1.5 py-0.5 rounded border border-base-300">manager / ChangeMe123!</span>
-                </div>
-                <div class="flex justify-between items-center">
-                    <span>📦 พนักงานคลัง (Staff):</span>
-                    <span class="font-mono bg-base-100 px-1.5 py-0.5 rounded border border-base-300">staff / Staff123!</span>
-                </div>
-            </div>
-
-            <div class="text-center mt-3">
-                <a href="setup.php" class="link link-hover text-xs text-primary font-medium">⚙ ติดตั้งฐานข้อมูลใหม่ / นำเข้า Master Excel (setup.php)</a>
+            <div class="mt-4 rounded-lg bg-base-200/50 p-3 text-xs text-base-content/70 border border-base-300">
+                ต้องสร้างบัญชีผู้ดูแลระบบในฐานข้อมูล Supabase ก่อนเข้าใช้งานครั้งแรก
             </div>
         </div>
     </div>
