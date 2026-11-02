@@ -62,7 +62,7 @@ function db(): PDO
         return $pdo;
     }
 
-    $databaseUrl = getenv('POSTGRES_URL_NON_POOLING') ?: getenv('POSTGRES_URL');
+    $databaseUrl = getenv('POSTGRES_URL') ?: getenv('POSTGRES_URL_NON_POOLING');
     if ($databaseUrl) {
         $parts = parse_url($databaseUrl);
         if (!$parts || empty($parts['host']) || empty($parts['path'])) {
