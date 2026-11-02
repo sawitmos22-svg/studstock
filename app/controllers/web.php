@@ -1,5 +1,6 @@
 <?php
 require dirname(__DIR__) . '/config.php';
+require dirname(__DIR__) . '/awarded.php';
 define('APP_BOOTSTRAPPED', true);
 
 if (isset($_GET['logout'])) {
@@ -100,6 +101,32 @@ $csvSafeText = static function ($value): string {
     $value = (string) $value;
     return preg_match('/^[\x00-\x20]*[=+\-@]/', $value) ? "'" . $value : $value;
 };
+
+if (isset($_GET['export']) && $_GET['export'] === 'awarded_template' && $manager) {
+    [$headers] = loadAwardedItems();
+    header('Content-Type: text/csv; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="studbolt_awarded_items_template.csv"');
+    $out = fopen('php://output', 'w');
+    fwrite($out, "\xEF\xBB\xBF");
+    fputcsv($out, array_map($csvSafeText, $headers));
+    fclose($out);
+    exit;
+}
+
+if (isset($_GET['export']) && $_GET['export'] === 'awarded_items' && $manager) {
+    [$headers, $items] = loadAwardedItems();
+    header('Content-Type: text/csv; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="studbolt_awarded_items_' . date('Ymd_His') . '.csv"');
+
+    $out = fopen('php://output', 'w');
+    fwrite($out, "\xEF\xBB\xBF");
+    fputcsv($out, array_map($csvSafeText, $headers));
+    foreach ($items as $item) {
+        fputcsv($out, array_map($csvSafeText, $item));
+    }
+    fclose($out);
+    exit;
+}
 
 if (isset($_GET['export']) && $_GET['export'] === 'selected' && $manager) {
     if (!class_exists(ZipArchive::class)) {
@@ -427,38 +454,114 @@ if ($page === 'accounts') {
     exit;
 }
 
-$products = db()->query(
+$databaseProducts = db()->query(
     'SELECT * FROM products WHERE active = 1 ORDER BY size_mm + 0, length_mm, grade'
 )->fetchAll();
+$productsBySku = [];
+foreach ($databaseProducts as $product) {
+    $productsBySku[strtolower((string) $product['sku'])] = $product;
+}
+
+[$awardedHeaders, $awardedItems] = loadAwardedItems();
+$awardedCatalog = [];
+$catalogSkus = [];
+foreach ($awardedItems as $item) {
+    $sku = awardedCatalogSku((string) ($item[4] ?? ''), (string) ($item[3] ?? ''));
+    $product = $sku !== '' ? ($productsBySku[strtolower($sku)] ?? null) : null;
+    if ($sku !== '') {
+        $catalogSkus[strtolower($sku)] = true;
+    }
+    $awardedCatalog[] = [
+        'item' => $item,
+        'sku' => $sku,
+        'product' => $product,
+    ];
+}
+
+$awardedColumnIndexes = awardedHeaderIndexes($awardedHeaders);
+$manualCatalogItems = [];
+foreach ($databaseProducts as $product) {
+    if (isset($catalogSkus[strtolower((string) $product['sku'])])) {
+        continue;
+    }
+
+    $item = array_fill(0, count($awardedHeaders), '');
+    $manualValues = [
+        'no.' => 'ระบบ',
+        'lotname' => (string) $product['location_code'],
+        'awardedlineitemname' => (string) ($product['description'] ?: $product['sku']),
+        'partnumber' => (string) $product['sku'],
+        'size' => (string) $product['size_mm'],
+        'thread' => (string) $product['standard_name'],
+        'studmaterial' => (string) $product['grade'],
+    ];
+    foreach ($manualValues as $column => $value) {
+        if (isset($awardedColumnIndexes[$column])) {
+            $item[$awardedColumnIndexes[$column]] = $value;
+        }
+    }
+    $manualCatalogItems[] = [
+        'item' => $item,
+        'sku' => (string) $product['sku'],
+        'product' => $product,
+    ];
+}
+$completeCatalog = array_merge($awardedCatalog, $manualCatalogItems);
+$products = [];
+$seenProductIds = [];
+foreach ($completeCatalog as $entry) {
+    $product = $entry['product'];
+    if ($product === null || isset($seenProductIds[(int) $product['id']])) {
+        continue;
+    }
+
+    $products[] = $product;
+    $seenProductIds[(int) $product['id']] = true;
+}
+$lowProducts = array_values(array_filter(
+    $products,
+    static fn(array $product): bool => (int) $product['min_qty'] > 0
+        && (int) $product['qty'] <= (int) $product['min_qty']
+));
+$totals = [
+    'skus' => count($products),
+    'pieces' => array_sum(array_map(
+        static fn(array $product): int => (int) $product['qty'],
+        $products
+    )),
+    'low_count' => count($lowProducts),
+];
 
 $productSearch = isset($_GET['product_search']) && is_string($_GET['product_search'])
     ? trim($_GET['product_search'])
     : '';
-$inventoryFilter = '';
-$inventoryParams = [];
-if ($productSearch !== '') {
-    $inventoryFilter = " AND (sku LIKE ? ESCAPE '!' OR size_mm LIKE ? ESCAPE '!' OR grade LIKE ? ESCAPE '!' OR standard_name LIKE ? ESCAPE '!')";
-    $searchTerm = '%' . strtr($productSearch, ['!' => '!!', '%' => '!%', '_' => '!_']) . '%';
-    $inventoryParams = [$searchTerm, $searchTerm, $searchTerm, $searchTerm];
-}
-$inventoryCount = db()->prepare('SELECT COUNT(*) FROM products WHERE active = 1' . $inventoryFilter);
-$inventoryCount->execute($inventoryParams);
-$inventoryTotal = (int) $inventoryCount->fetchColumn();
-$inventoryPages = max(1, (int) ceil($inventoryTotal / 10));
-$inventoryPage = filter_var($_GET['product_page'] ?? 1, FILTER_VALIDATE_INT);
+$filteredAwardedItems = $productSearch === ''
+    ? $completeCatalog
+    : array_values(array_filter($completeCatalog, static function (array $entry) use ($productSearch): bool {
+        $haystack = implode(' ', [
+            $entry['sku'],
+            implode(' ', $entry['item']),
+            $entry['product']['qty'] ?? '',
+            $entry['product']['grade'] ?? '',
+            $entry['product']['description'] ?? '',
+        ]);
+        return stripos($haystack, $productSearch) !== false;
+    }));
+$inventoryTotal = count($filteredAwardedItems);
+$inventoryPageSize = 10;
+$inventoryPages = max(1, (int) ceil($inventoryTotal / $inventoryPageSize));
+$inventoryPage = filter_var($_GET['inventory_page'] ?? 1, FILTER_VALIDATE_INT);
 $inventoryPage = $inventoryPage === false ? 1 : max(1, min($inventoryPages, $inventoryPage));
-$inventoryOffset = ($inventoryPage - 1) * 10;
-$inventoryQuery = db()->prepare(
-    'SELECT * FROM products WHERE active = 1' . $inventoryFilter .
-    ' ORDER BY size_mm + 0, length_mm, grade LIMIT 10 OFFSET ' . $inventoryOffset
-);
-$inventoryQuery->execute($inventoryParams);
-$inventoryProducts = $inventoryQuery->fetchAll();
-
-$totals = db()->query(
-    'SELECT COUNT(*) skus, COALESCE(SUM(qty), 0) pieces, SUM(CASE WHEN qty <= min_qty THEN 1 ELSE 0 END) low_count
-     FROM products WHERE active = 1'
-)->fetch();
+$inventoryOffset = ($inventoryPage - 1) * $inventoryPageSize;
+$inventoryStart = $inventoryTotal === 0 ? 0 : $inventoryOffset + 1;
+$inventoryEnd = min($inventoryOffset + $inventoryPageSize, $inventoryTotal);
+$visibleAwardedItems = array_slice($filteredAwardedItems, $inventoryOffset, $inventoryPageSize);
+$visibleProducts = $productSearch === ''
+    ? $products
+    : array_values(array_filter($products, static fn(array $product): bool => stripos(
+        implode(' ', [$product['sku'], $product['size_mm'], $product['diameter_mm'], $product['length_mm'], $product['grade'], $product['standard_name'], $product['description']]),
+        $productSearch
+    ) !== false));
 
 $transactionTotal = (int) db()->query('SELECT COUNT(*) FROM transactions')->fetchColumn();
 $transactionPages = max(1, (int) ceil($transactionTotal / 10));
@@ -474,9 +577,7 @@ $recent = db()->query(
      LIMIT 10 OFFSET ' . $transactionOffset
 )->fetchAll();
 
-$low = db()->query(
-    'SELECT * FROM products WHERE active = 1 AND qty <= min_qty ORDER BY qty ASC LIMIT 10'
-)->fetchAll();
+$low = array_slice($lowProducts, 0, 10);
 require dirname(__DIR__) . '/views/layout.php';
 require dirname(__DIR__) . '/views/dashboard/overview.php';
 require dirname(__DIR__) . '/views/dashboard/issue.php';

@@ -3,11 +3,10 @@
                 <div class="panel-title">
                     <div>
                         <h2>สแกน QR Code / ค้นหาสินค้า</h2>
-                        <p>ใช้กล้องมือถือหรือพิมพ์ SKU เพื่อเลือกรายการ</p>
+                        <p>สแกน SKU จากฉลาก หรือพิมพ์รหัส Part Number / JDE เพื่อเลือกจากตารางเดียวกัน</p>
                     </div>
                     <span class="badge badge-primary badge-outline"><?= $stockStaff ? 'STOCK IN / OUT' : 'QUICK ISSUE' ?></span>
                 </div>
-
                 <div class="scan-grid">
                     <div class="scan-box card bg-base-200/50">
                         <div class="scan-icon">▦</div>
@@ -18,10 +17,9 @@
                         <div id="reader" class="reader"></div>
                         <div id="scanMsg" class="small-note" role="status" aria-live="polite"></div>
                     </div>
-
                     <div class="search-box">
-                        <label>ค้นหาด้วย SKU / ขนาด / เกรด</label>
-                        <input class="input input-bordered" id="search" placeholder="เช่น SB-M12x80-A4 หรือ M12">
+                        <label>ค้นหา SKU / ขนาด / เกรด / รายละเอียด</label>
+                        <input class="input input-bordered" id="search" placeholder="เช่น 1000020294 หรือ 3/4 in">
                         <div class="product-results" id="productResults"></div>
                     </div>
                 </div>
@@ -64,5 +62,3 @@
                     <div id="txnMsg" role="status"></div>
                 </form>
             </section>
-
-            

@@ -20,7 +20,7 @@
                         <div class="stat-icon cyan">▤</div>
                         <span>จำนวนคงเหลือรวม</span>
                         <strong><?= number_format($totals['pieces']) ?></strong>
-                        <small>ชิ้น</small>
+                        <small>ชิ้น · รวมจาก SKU ในตาราง</small>
                     </div>
                     <div class="stat card bg-base-100 shadow-sm">
                         <div class="stat-icon orange">⚠</div>

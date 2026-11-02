@@ -9,6 +9,7 @@
                     'length_mm' => (float) $p['length_mm'],
                     'grade' => $p['grade'],
                     'standard_name' => $p['standard_name'],
+                    'description' => $p['description'],
                     'qty' => (int) $p['qty'],
                     'min_qty' => (int) $p['min_qty'],
                     'location_code' => $p['location_code'],
@@ -16,7 +17,6 @@
             }, $products),
             JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP
         ) ?>;
-
         let selected = null;
         let cameraStream = null;
         let scanFrame = null;
@@ -46,22 +46,33 @@
             }[c]));
         }
 
+        function syncInventoryRows(query = '', product = null) {
+            const rows = document.querySelectorAll('.stock-product-row');
+            const needle = String(query || '').toLocaleLowerCase().trim();
+            rows.forEach((row) => {
+                const rowText = (row.dataset.search || row.textContent).toLocaleLowerCase();
+                const matchedProduct = product && Number(row.dataset.productId) === product.id;
+                row.hidden = Boolean(needle) && !rowText.includes(needle);
+                row.classList.toggle('is-linked-product', Boolean(matchedProduct));
+            });
+        }
+
         function renderResults(q = '') {
             const box = $('productResults');
             if (!box) return;
 
             const search = q.toLowerCase().trim();
             const matches = products
-                .filter((p) => (p.sku + ' ' + p.size_mm + ' ' + p.grade + ' ' + p.length_mm).toLowerCase().includes(search))
+                .filter((p) => (p.sku + ' ' + p.size_mm + ' ' + p.grade + ' ' + p.length_mm + ' ' + p.standard_name + ' ' + p.description).toLowerCase().includes(search))
                 .slice(0, 12);
 
             box.innerHTML = matches.map((p) => `
                 <button type="button" class="result-item" data-id="${p.id}">
                     <span>
                         <b>${esc(p.sku)}</b>
-                        <small>${esc(p.size_mm)} × ${p.length_mm} mm · ${esc(p.grade)}</small>
+                        <small>${esc(p.size_mm)} · ${esc(p.grade)}</small>
                     </span>
-                    <strong class="${p.qty <= p.min_qty ? 'qty-low' : ''}">${p.qty.toLocaleString()} ชิ้น</strong>
+                    <strong class="${p.min_qty > 0 && p.qty <= p.min_qty ? 'qty-low' : ''}">${p.qty.toLocaleString()} ชิ้น</strong>
                 </button>
             `).join('') || '<p class="muted">ไม่พบสินค้า</p>';
 
@@ -79,7 +90,7 @@
                 <div>
                     <span class="eyebrow">SELECTED ITEM</span>
                     <h3>${esc(selected.sku)}</h3>
-                    <p>${esc(selected.size_mm)} × ${selected.length_mm} mm · ${esc(selected.grade)} · ${esc(selected.standard_name)}</p>
+                    <p>${esc(selected.size_mm)} · ${esc(selected.grade)}${selected.standard_name ? ' · ' + esc(selected.standard_name) : ''}</p>
                     <small>ตำแหน่ง ${esc(selected.location_code || '-')}</small>
                 </div>
                 <div class="stock-number">
@@ -89,10 +100,37 @@
                 </div>
             `;
             $('txnMsg').textContent = '';
+            if ($('search')) $('search').value = selected.sku;
+            if ($('inventorySearch')) $('inventorySearch').value = selected.sku;
+            renderResults(selected.sku);
+            syncInventoryRows(selected.sku, selected);
         }
 
-        $('search')?.addEventListener('input', (e) => renderResults(e.target.value));
+        $('search')?.addEventListener('input', (e) => {
+            if ($('inventorySearch')) $('inventorySearch').value = e.target.value;
+            renderResults(e.target.value);
+            syncInventoryRows(e.target.value);
+        });
+        $('inventorySearch')?.addEventListener('input', (e) => {
+            if ($('search')) $('search').value = e.target.value;
+            renderResults(e.target.value);
+            syncInventoryRows(e.target.value);
+        });
+        document.querySelectorAll('.stock-product-row').forEach((row) => {
+            row.addEventListener('click', (event) => {
+                if (event.target.closest('button, input, form')) return;
+                const productId = Number(row.dataset.productId);
+                if (!productId) {
+                    $('scanMsg').textContent = 'รายการนี้ยังไม่มี Part Number/JDE สำหรับทำรายการสต๊อก';
+                    return;
+                }
+                choose(productId);
+                $('scanMsg').textContent = 'เลือก ' + (selected?.sku || '') + ' จากตารางสินค้าแล้ว';
+                $('txnForm').scrollIntoView({ behavior: 'smooth', block: 'center' });
+            });
+        });
         renderResults();
+        syncInventoryRows($('inventorySearch')?.value || '');
 
         $('type').addEventListener('change', () => {
             const isAdjust = $('type').value === 'ADJUST';
@@ -212,6 +250,7 @@
                         } else {
                             $('search').value = value;
                             renderResults(value);
+                            syncInventoryRows(value);
                             $('scanMsg').textContent = 'สแกนแล้ว กรุณาเลือกสินค้าที่ตรงกัน';
                         }
                         return;
@@ -346,7 +385,7 @@
                         throw new Error((json.error || 'นำเข้าไม่สำเร็จ') + details);
                     }
 
-                    message.textContent = 'นำเข้าสำเร็จ ' + json.imported + ' รายการ';
+                    message.textContent = `ซิงก์สำเร็จ ${json.imported} รายการ · ซ่อนรายการเดิม ${json.archived || 0} รายการ โดยเก็บยอดและประวัติไว้`;
                     setTimeout(() => location.reload(), 1200);
                 } catch (error) {
                     message.textContent = error.message;
@@ -357,38 +396,106 @@
             $('closeProductDialog').onclick = () => $('productDialog').close();
             $('closeQrLabelDialog').onclick = () => $('qrLabelDialog').close();
 
-            function openQrLabel(productId) {
-                const product = products.find((item) => item.id === productId);
+            const printSelectedQrButton = $('printSelectedQrBtn');
+            const selectAllQrProducts = $('selectAllQrProducts');
+            const updateQrSelection = () => {
+                const checkboxes = [...document.querySelectorAll('.select-qr-product')];
+                const selectedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
+                printSelectedQrButton.disabled = selectedCount === 0;
+                printSelectedQrButton.textContent = `พิมพ์ QR ที่เลือก (${selectedCount})`;
+                selectAllQrProducts.checked = checkboxes.length > 0 && selectedCount === checkboxes.length;
+                selectAllQrProducts.indeterminate = selectedCount > 0 && selectedCount < checkboxes.length;
+            };
+            selectAllQrProducts.addEventListener('change', () => {
+                document.querySelectorAll('.select-qr-product').forEach((checkbox) => {
+                    checkbox.checked = selectAllQrProducts.checked;
+                });
+                updateQrSelection();
+            });
+            document.querySelectorAll('.select-qr-product').forEach((checkbox) => {
+                checkbox.addEventListener('change', updateQrSelection);
+            });
+            printSelectedQrButton.addEventListener('click', () => {
+                const ids = [...document.querySelectorAll('.select-qr-product:checked')]
+                    .map((checkbox) => Number(checkbox.value));
+                openQrLabels(ids);
+            });
+
+            document.querySelectorAll('.min-stock-form').forEach((form) => {
+                form.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const button = form.querySelector('button[type="submit"]');
+                    const minQty = Number(form.elements.min_qty.value);
+                    button.disabled = true;
+                    try {
+                        const response = await fetch('api.php', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                action: 'update_min_qty',
+                                product_id: Number(form.dataset.productId),
+                                min_qty: minQty,
+                                csrf_token: form.elements.csrf_token.value
+                            })
+                        });
+                        const json = await response.json();
+                        if (!response.ok) throw new Error(json.error || 'บันทึกจุดเตือนไม่สำเร็จ');
+                        location.reload();
+                    } catch (error) {
+                        button.disabled = false;
+                        window.alert(error.message);
+                    }
+                });
+            });
+
+            function openQrLabels(productIds) {
                 const message = $('qrLabelMsg');
-                const code = $('qrCode');
-                code.replaceChildren();
+                const labelList = $('qrLabelList');
+                labelList.replaceChildren();
                 message.textContent = '';
 
-                if (!product) {
-                    message.textContent = 'ไม่พบข้อมูลสินค้าที่ต้องการสร้าง QR';
-                    $('qrLabelDialog').showModal();
-                    return;
-                }
                 if (typeof window.QRCode !== 'function') {
                     message.textContent = 'โหลดตัวสร้าง QR ไม่สำเร็จ โปรดตรวจสอบอินเทอร์เน็ตแล้วรีเฟรชหน้า';
                     $('qrLabelDialog').showModal();
                     return;
                 }
 
-                $('qrLabelSku').textContent = product.sku;
-                $('qrLabelDescription').textContent = `${product.size_mm} × ${product.length_mm} mm · ${product.grade}${product.standard_name ? ' · ' + product.standard_name : ''}`;
-                $('qrLabelLocation').textContent = 'ตำแหน่ง: ' + (product.location_code || '-');
                 try {
-                    new window.QRCode(code, {
-                        text: product.sku,
-                        width: 240,
-                        height: 240,
-                        colorDark: '#102a43',
-                        colorLight: '#ffffff',
-                        correctLevel: window.QRCode.CorrectLevel.M
+                    productIds.forEach((productId) => {
+                        const product = products.find((item) => item.id === productId);
+                        if (!product) {
+                            throw new Error('ไม่พบข้อมูลสินค้า ID ' + productId);
+                        }
+
+                        const label = document.createElement('div');
+                        label.className = 'qr-label';
+                        const info = document.createElement('div');
+                        info.className = 'qr-label-info';
+                        const sku = document.createElement('strong');
+                        sku.textContent = product.sku;
+                        const description = document.createElement('span');
+                        description.textContent = `${product.size_mm} × ${product.length_mm} mm · ${product.grade}${product.standard_name ? ' · ' + product.standard_name : ''}`;
+                        const location = document.createElement('span');
+                        location.textContent = 'ตำแหน่ง: ' + (product.location_code || '-');
+                        const code = document.createElement('div');
+                        code.className = 'qr-code';
+                        code.setAttribute('aria-label', 'QR Code ของ ' + product.sku);
+                        info.append(sku, description, location);
+                        label.append(info, code);
+                        labelList.append(label);
+                        new window.QRCode(code, {
+                            text: product.sku,
+                            width: 240,
+                            height: 240,
+                            colorDark: '#102a43',
+                            colorLight: '#ffffff',
+                            correctLevel: window.QRCode.CorrectLevel.M
+                        });
                     });
+                    $('qrLabelNote').textContent = 'QR นี้บันทึก SKU เพื่อใช้ค้นหาสินค้าในระบบ · ' + productIds.length + ' รายการ';
                     $('qrLabelDialog').showModal();
                 } catch (error) {
+                    labelList.replaceChildren();
                     message.textContent = 'สร้าง QR ไม่สำเร็จ: ' + error.message;
                     $('qrLabelDialog').showModal();
                 }
@@ -396,19 +503,21 @@
 
             document.querySelectorAll('.generate-qr-btn').forEach((button) => {
                 button.addEventListener('click', () => {
-                    openQrLabel(Number(button.dataset.qrId));
+                    openQrLabels([Number(button.dataset.qrId)]);
                 });
             });
-            if (products.length && typeof window.QRCode === 'function' && $('shelfQrCode')) {
-                new window.QRCode($('shelfQrCode'), {
-                    text: products[0].sku,
-                    width: 150,
-                    height: 150,
-                    colorDark: '#102a43',
-                    colorLight: '#ffffff',
-                    correctLevel: window.QRCode.CorrectLevel.M
-                });
-            }
+            document.addEventListener('DOMContentLoaded', () => {
+                if (products.length && typeof window.QRCode === 'function' && $('shelfQrCode')) {
+                    new window.QRCode($('shelfQrCode'), {
+                        text: products[0].sku,
+                        width: 150,
+                        height: 150,
+                        colorDark: '#102a43',
+                        colorLight: '#ffffff',
+                        correctLevel: window.QRCode.CorrectLevel.M
+                    });
+                }
+            }, { once: true });
             $('printQrLabelBtn').onclick = () => window.print();
             $('productForm').addEventListener('submit', async (e) => {
                 e.preventDefault();

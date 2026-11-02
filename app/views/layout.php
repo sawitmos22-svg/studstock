@@ -6,10 +6,10 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>StudBolt Stock</title>
     <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css">
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js" defer></script>
     <?php if ($canViewStock): ?>
-        <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" defer></script>
     <?php endif; ?>
     <link rel="stylesheet" href="<?= h(APP_PUBLIC_BASE) ?>assets/style.css?v=<?= (int) filemtime(__DIR__ . '/../../public/assets/style.css') ?>">
 </head>

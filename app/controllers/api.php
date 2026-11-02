@@ -1,5 +1,6 @@
 <?php
 require dirname(__DIR__) . '/config.php';
+require dirname(__DIR__) . '/awarded.php';
 
 header('Content-Type: application/json; charset=utf-8');
 require_login();
@@ -34,6 +35,11 @@ function normalizeImportHeader(string $header): string
     $aliases = [
         'sku' => 'sku',
         'productsku' => 'sku',
+        'partnumber' => 'sku',
+        'part_number' => 'sku',
+        'itemno' => 'sku',
+        'itemnumber' => 'sku',
+        'jde' => 'sku',
         'รหัสสินค้า' => 'sku',
         'size' => 'size_mm',
         'sizemm' => 'size_mm',
@@ -45,24 +51,150 @@ function normalizeImportHeader(string $header): string
         'lengthmm' => 'length_mm',
         'ความยาวmm' => 'length_mm',
         'grade' => 'grade',
+        'studmaterial' => 'grade',
+        'stud_material' => 'grade',
+        'material' => 'grade',
         'เกรด' => 'grade',
         'standard' => 'standard_name',
         'standardname' => 'standard_name',
+        'thread' => 'standard_name',
         'มาตรฐาน' => 'standard_name',
         'description' => 'description',
+        'itemname' => 'description',
+        'item_name' => 'description',
         'รายละเอียด' => 'description',
         'qty' => 'qty',
         'quantity' => 'qty',
+        'poqty' => 'qty',
+        'po1qty' => 'qty',
+        'po2qty' => 'qty',
+        'totalpoqty' => 'qty',
         'จำนวน' => 'qty',
         'minqty' => 'min_qty',
         'minimumqty' => 'min_qty',
         'จำนวนขั้นต่ำ' => 'min_qty',
         'location' => 'location_code',
         'locationcode' => 'location_code',
+        'lotname' => 'location_code',
         'ตำแหน่ง' => 'location_code',
     ];
 
     return $aliases[$header] ?? '';
+}
+
+function normalizeLegacyCatalogRows(array $rows): array
+{
+    if (count($rows) < 2) {
+        return $rows;
+    }
+
+    $header = $rows[0]['cells'] ?? [];
+    $headerMap = [];
+    foreach ($header as $index => $name) {
+        $key = normalizeImportHeader((string) $name);
+        if ($key !== '') {
+            $headerMap[$key] = (int) $index;
+        }
+    }
+
+    $hasLegacyStudBoltImport = false;
+    foreach ($header as $name) {
+        $normalized = normalizeImportHeader((string) $name);
+        if (in_array($normalized, ['sku', 'size_mm', 'grade', 'qty', 'location_code'], true)) {
+            continue;
+        }
+        $lower = strtolower(trim((string) $name));
+        if (strpos($lower, 'po1') !== false || strpos($lower, 'po2') !== false || strpos($lower, 'total_po') !== false
+            || strpos($lower, 'lot_name') !== false || strpos($lower, 'part_number') !== false || strpos($lower, 'stud_material') !== false) {
+            $hasLegacyStudBoltImport = true;
+            break;
+        }
+    }
+
+    if (!$hasLegacyStudBoltImport) {
+        return $rows;
+    }
+
+    $cellValue = static function (array $cells, array $map, array $keys): string {
+        foreach ($keys as $key) {
+            $index = $map[$key] ?? null;
+            if ($index === null) {
+                continue;
+            }
+            $value = trim((string) ($cells[$index] ?? ''));
+            if ($value !== '') {
+                return $value;
+            }
+        }
+        return '';
+    };
+
+    $converted = [[
+        'line' => 1,
+        'cells' => ['sku', 'size_mm', 'diameter_mm', 'length_mm', 'grade', 'standard_name', 'description', 'qty', 'min_qty', 'location_code'],
+    ]];
+
+    foreach (array_slice($rows, 1) as $row) {
+        $cells = $row['cells'] ?? [];
+        $line = $row['line'] ?? count($converted) + 1;
+
+        $sku = $cellValue($cells, $headerMap, ['sku', 'partnumber', 'part_number', 'itemno', 'itemnumber', 'jde']);
+        if ($sku === '') {
+            continue;
+        }
+
+        $size = $cellValue($cells, $headerMap, ['size_mm', 'size']);
+        [$diameterMm, $lengthMm] = $size !== '' ? awardedParseSize($size) : [null, null];
+        if ($diameterMm !== null && $lengthMm !== null) {
+            $diameterMm = (float) $diameterMm;
+            $lengthMm = (float) $lengthMm;
+        }
+
+        $grade = $cellValue($cells, $headerMap, ['grade', 'studmaterial', 'stud_material', 'material', 'coating']);
+        if ($grade === '') {
+            $grade = 'UNSPECIFIED';
+        }
+
+        $thread = $cellValue($cells, $headerMap, ['standard_name', 'thread']);
+        $description = $cellValue($cells, $headerMap, ['description', 'item_name', 'itemname']);
+        $qty = 0;
+        $qtyText = $cellValue($cells, $headerMap, ['qty', 'quantity', 'poqty', 'po1qty', 'po2qty', 'totalpoqty']);
+        if ($qtyText !== '') {
+            $qty = (int) round((float) $qtyText);
+        }
+        if ($qty === 0) {
+            foreach (['po1qty', 'po2qty', 'totalpoqty'] as $field) {
+                $index = $headerMap[$field] ?? null;
+                if ($index === null) {
+                    continue;
+                }
+                $value = trim((string) ($cells[$index] ?? ''));
+                if ($value !== '') {
+                    $qty += (int) round((float) $value);
+                }
+            }
+        }
+
+        $location = $cellValue($cells, $headerMap, ['location_code', 'location', 'lotname']);
+
+        $converted[] = [
+            'line' => $line,
+            'cells' => [
+                $sku,
+                $size !== '' ? awardedClip($size, 30) : $sku,
+                $diameterMm === null ? '' : (string) $diameterMm,
+                $lengthMm === null ? '' : (string) $lengthMm,
+                awardedClip($grade, 80),
+                awardedClip($thread, 80),
+                awardedClip($description, 500),
+                (string) $qty,
+                '0',
+                awardedClip($location, 80),
+            ],
+        ];
+    }
+
+    return $converted;
 }
 
 function xmlText(SimpleXMLElement $element, string $namespace): string
@@ -323,7 +455,7 @@ function validatedImportProducts(array $rows): array
             continue;
         }
         if (strlen($sku) > 80 || strlen($size) > 30 || strlen($grade) > 80
-            || strlen($values['standard_name'] ?? '') > 80 || strlen($values['description'] ?? '') > 255
+            || strlen($values['standard_name'] ?? '') > 80 || strlen($values['description'] ?? '') > 500
             || strlen($values['location_code'] ?? '') > 80) {
             $errors[] = "แถว {$line}: ข้อมูลข้อความยาวเกินขนาดที่ระบบรองรับ";
             continue;
@@ -508,6 +640,11 @@ try {
         $rows = $extension === 'csv'
             ? csvRows($upload['tmp_name'])
             : xlsxRows($upload['tmp_name']);
+        if (awardedIsMasterHeader(awardedCells($rows[0] ?? ['cells' => []]))) {
+            $rows = awardedToProductImportRows($rows);
+        } else {
+            $rows = normalizeLegacyCatalogRows($rows);
+        }
         $products = validatedImportProducts($rows);
 
         $pdo = db();
@@ -516,26 +653,57 @@ try {
             'INSERT INTO products (sku, size_mm, diameter_mm, length_mm, grade, standard_name, description, qty, min_qty, location_code)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
+        $findExisting = $pdo->prepare('SELECT id FROM products WHERE sku = ? LIMIT 1 FOR UPDATE');
+        $updateExisting = $pdo->prepare(
+            'UPDATE products
+             SET size_mm = ?, diameter_mm = ?, length_mm = ?, grade = ?, standard_name = ?, description = ?, location_code = ?, active = 1, updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?'
+        );
         $initialStock = $pdo->prepare(
             "INSERT INTO transactions (product_id, user_id, user_username, user_full_name, txn_type, qty, balance_after, note)
              VALUES (?, ?, ?, ?, 'IN', ?, ?, ?)"
         );
 
+        $archived = 0;
+        if (($_POST['replace_catalog'] ?? '') === '1') {
+            $skuList = array_column($products, 'sku');
+            $placeholders = implode(',', array_fill(0, count($skuList), '?'));
+            $archive = $pdo->prepare("UPDATE products SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE active = 1 AND sku NOT IN ({$placeholders})");
+            $archive->execute($skuList);
+            $archived = $archive->rowCount();
+        }
+
         foreach ($products as $product) {
-            $insert->execute([
-                $product['sku'],
-                $product['size_mm'],
-                $product['diameter_mm'],
-                $product['length_mm'],
-                $product['grade'],
-                $product['standard_name'],
-                $product['description'],
-                $product['qty'],
-                $product['min_qty'],
-                $product['location_code'],
-            ]);
-            $productId = (int) $pdo->lastInsertId();
-            if ($product['qty'] > 0) {
+            $findExisting->execute([$product['sku']]);
+            $existingId = $findExisting->fetchColumn();
+            if ($existingId !== false) {
+                $productId = (int) $existingId;
+                $updateExisting->execute([
+                    $product['size_mm'],
+                    $product['diameter_mm'],
+                    $product['length_mm'],
+                    $product['grade'],
+                    $product['standard_name'],
+                    $product['description'],
+                    $product['location_code'],
+                    $productId,
+                ]);
+            } else {
+                $insert->execute([
+                    $product['sku'],
+                    $product['size_mm'],
+                    $product['diameter_mm'],
+                    $product['length_mm'],
+                    $product['grade'],
+                    $product['standard_name'],
+                    $product['description'],
+                    $product['qty'],
+                    $product['min_qty'],
+                    $product['location_code'],
+                ]);
+                $productId = (int) $pdo->lastInsertId();
+            }
+            if ($existingId === false && $product['qty'] > 0) {
                 $initialStock->execute([
                     $productId,
                     $u['id'],
@@ -560,7 +728,7 @@ try {
         ]);
 
         $pdo->commit();
-        respond(['ok' => true, 'imported' => count($products)]);
+        respond(['ok' => true, 'imported' => count($products), 'archived' => $archived]);
     }
 
     if (($data['action'] ?? '') === 'pending_stock_request_count') {
@@ -845,6 +1013,31 @@ try {
         }
         $pdo->commit();
         respond(['ok' => true, 'id' => $productId]);
+    }
+
+    if (($data['action'] ?? '') === 'update_min_qty') {
+        if ($u['role'] !== 'manager') {
+            respond(['error' => 'เฉพาะผู้จัดการเท่านั้น'], 403);
+        }
+        $pid = filter_var($data['product_id'] ?? null, FILTER_VALIDATE_INT);
+        $minQty = filter_var($data['min_qty'] ?? null, FILTER_VALIDATE_INT);
+        $csrfToken = (string) ($data['csrf_token'] ?? '');
+        if (!isset($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csrfToken)) {
+            respond(['error' => 'คำขอหมดอายุหรือไม่ถูกต้อง กรุณารีเฟรชหน้าแล้วลองใหม่'], 403);
+        }
+        if ($pid === false || $pid < 1 || $minQty === false || $minQty < 0 || $minQty > 2147483647) {
+            respond(['error' => 'กรุณาระบุจุดเตือนเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป'], 422);
+        }
+        $statement = db()->prepare('UPDATE products SET min_qty = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND active = 1');
+        $statement->execute([$minQty, $pid]);
+        if ($statement->rowCount() === 0) {
+            $exists = db()->prepare('SELECT 1 FROM products WHERE id = ? AND active = 1');
+            $exists->execute([$pid]);
+            if ($exists->fetchColumn() === false) {
+                respond(['error' => 'ไม่พบสินค้าที่ใช้งานอยู่'], 404);
+            }
+        }
+        respond(['ok' => true, 'min_qty' => $minQty]);
     }
 
     if (($data['action'] ?? '') === 'create_user') {

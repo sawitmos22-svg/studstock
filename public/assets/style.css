@@ -382,6 +382,18 @@ a {
     border-top: 3px solid var(--blue);
 }
 
+.stock-product-row {
+    cursor: pointer;
+}
+
+.stock-product-row:hover td {
+    background: #eff6ff;
+}
+
+.stock-product-row.is-linked-product td {
+    background: #dbeafe;
+}
+
 .issue-panel > .card-body,
 .panel.card > .card-body {
     gap: 0;
@@ -626,16 +638,25 @@ select {
 
 .inventory-search input {
     width: 100%;
+    min-width: 0;
+}
+
+.inventory-search .btn {
+    flex: 0 0 auto;
 }
 
 .inventory-pagination {
     justify-content: space-between;
+    align-items: center;
     flex-wrap: wrap;
+    gap: 8px;
 }
 
-.inventory-pagination > div {
+.inventory-pagination nav {
     display: flex;
+    align-items: center;
     gap: 8px;
+    white-space: nowrap;
 }
 
 .table-actions {
@@ -895,6 +916,14 @@ footer {
 
 .modal-box .form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.product-form-section {
+    grid-column: 1 / -1;
+    margin: 4px 0 -4px;
+    color: #60758b;
+    font-size: 13px;
+    font-weight: 600;
 }
 
 .modal-box .panel-title .btn {
@@ -1184,6 +1213,24 @@ footer {
     width: min(680px, calc(100vw - 28px));
 }
 
+.qr-label-list {
+    display: grid;
+    gap: 12px;
+    max-height: min(62vh, 620px);
+    overflow: auto;
+}
+
+#selectAllQrProducts,
+.select-qr-product {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--blue);
+}
+
+.select-qr-product {
+    cursor: pointer;
+}
+
 .qr-label {
     display: flex;
     align-items: center;
@@ -1257,17 +1304,17 @@ footer {
 
 @media print {
     @page {
-        size: 80mm 50mm;
-        margin: 0;
+        size: A4 portrait;
+        margin: 8mm;
     }
 
     html,
     body {
-        width: 80mm !important;
-        height: 50mm !important;
+        width: auto !important;
+        height: auto !important;
         min-height: 0 !important;
         margin: 0 !important;
-        overflow: hidden !important;
+        overflow: visible !important;
     }
 
     body * {
@@ -1280,11 +1327,11 @@ footer {
     }
 
     #qrLabelDialog[open] {
-        position: fixed !important;
-        inset: 0 !important;
+        position: absolute !important;
+        inset: 0 auto auto 0 !important;
         display: block !important;
-        width: 80mm !important;
-        height: 50mm !important;
+        width: 100% !important;
+        height: auto !important;
         max-width: none !important;
         max-height: none !important;
         margin: 0 !important;
@@ -1309,38 +1356,53 @@ footer {
 
     #qrLabelDialog .qr-dialog-box {
         display: block !important;
-        width: 80mm !important;
-        height: 50mm !important;
+        width: 100% !important;
+        height: auto !important;
         max-width: none !important;
         max-height: none !important;
         margin: 0 !important;
-        padding: 4mm !important;
-        overflow: hidden !important;
+        padding: 0 !important;
+        overflow: visible !important;
         border: 0 !important;
         border-radius: 0 !important;
         box-shadow: none !important;
     }
 
+    #qrLabelDialog .qr-label-list {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        align-items: stretch !important;
+        gap: 4mm !important;
+        max-height: none !important;
+        overflow: visible !important;
+    }
+
     #qrLabelDialog .qr-label {
-        width: 72mm !important;
-        height: 42mm !important;
+        display: flex !important;
+        width: auto !important;
+        height: 43mm !important;
         min-height: 0 !important;
         gap: 2mm !important;
-        padding: 0 !important;
-        border: 0 !important;
-        border-radius: 0 !important;
+        margin: 0 !important;
+        padding: 2mm !important;
+        border: .25mm solid #d8e1ec !important;
+        border-radius: 2mm !important;
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
     }
 
     #qrLabelDialog .qr-label-info {
-        gap: 2mm !important;
+        flex: 1 1 auto !important;
+        gap: 1.5mm !important;
+        overflow: hidden !important;
     }
 
     #qrLabelDialog .qr-label-info strong {
-        font-size: 15pt !important;
+        font-size: 10pt !important;
     }
 
     #qrLabelDialog .qr-label-info span {
-        font-size: 8pt !important;
+        font-size: 7pt !important;
     }
 
     #qrLabelDialog .qr-code {
@@ -1793,7 +1855,12 @@ body {
 }
 
 #stockTable {
-    min-width: 670px;
+    min-width: 1050px;
+}
+
+#stockTable.awarded-items-table {
+    width: max-content;
+    min-width: 100%;
 }
 
 #stockTable .table thead th,
@@ -1813,6 +1880,90 @@ body {
 
 #stockTable td:first-child b {
     overflow-wrap: anywhere;
+}
+
+#inventory .table-wrap {
+    max-height: 72vh;
+}
+
+#stockTable.stock-products-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    white-space: nowrap;
+}
+
+#stockTable.stock-products-table td {
+    max-width: 320px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+#stockTable.stock-products-table th:nth-child(2),
+#stockTable.stock-products-table td:nth-child(2) {
+    min-width: 300px;
+    max-width: 420px;
+}
+
+#stockTable.awarded-items-table th:nth-child(3),
+#stockTable.awarded-items-table td:nth-child(3) {
+    min-width: 280px;
+    max-width: 460px;
+}
+
+#stockTable.awarded-items-table th,
+#stockTable.awarded-items-table td {
+    white-space: normal;
+    vertical-align: top;
+}
+
+#stockTable.awarded-items-table th:nth-last-child(3),
+#stockTable.awarded-items-table td:nth-last-child(3) {
+    min-width: 82px;
+    white-space: nowrap;
+}
+
+#stockTable.awarded-items-table th:nth-last-child(2),
+#stockTable.awarded-items-table td:nth-last-child(2) {
+    min-width: 132px;
+}
+
+#stockTable.awarded-items-table th:last-child,
+#stockTable.awarded-items-table td:last-child {
+    min-width: 100px;
+    white-space: nowrap;
+}
+
+#stockTable.awarded-items-table td:last-child .badge {
+    display: inline-flex;
+    max-width: 100%;
+    white-space: nowrap;
+}
+
+.min-stock-form {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+}
+
+.min-stock-form input {
+    width: 72px;
+    min-height: 28px;
+}
+
+.min-stock-form .btn {
+    min-height: 28px;
+    height: 28px;
+    padding: 0 7px;
+    font-size: 9px;
+}
+
+.inventory-result-count {
+    margin: 0;
+    color: var(--muted);
+    font-size: 12px;
 }
 
 .subcell {
@@ -2126,7 +2277,7 @@ html {
     .manager-view .content > footer { order: 9; }
 
     #stockTable {
-        min-width: 760px;
+        min-width: 1050px;
     }
 }
 
@@ -2242,7 +2393,7 @@ html {
     }
 
     #stockTable {
-        min-width: 760px;
+        min-width: 1050px;
     }
 
     .qr-shelf-label {
