@@ -15,6 +15,34 @@ function db(): PDO
         return $pdo;
     }
 
+    $databaseUrl = getenv('POSTGRES_URL_NON_POOLING') ?: getenv('POSTGRES_URL');
+    if ($databaseUrl) {
+        $parts = parse_url($databaseUrl);
+        if (!$parts || empty($parts['host']) || empty($parts['path'])) {
+            throw new RuntimeException('รูปแบบ POSTGRES_URL ไม่ถูกต้อง');
+        }
+
+        parse_str($parts['query'] ?? '', $query);
+        $host = $parts['host'];
+        $port = (int) ($parts['port'] ?? 5432);
+        $database = rawurldecode(ltrim($parts['path'], '/'));
+        $username = rawurldecode($parts['user'] ?? '');
+        $password = rawurldecode($parts['pass'] ?? '');
+        $sslMode = preg_replace('/[^a-z]/i', '', $query['sslmode'] ?? 'require') ?: 'require';
+        $dsn = "pgsql:host={$host};port={$port};dbname={$database};sslmode={$sslMode}";
+        $options = [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            // Supabase transaction poolers do not support named server-side prepared statements.
+            PDO::ATTR_EMULATE_PREPARES => true,
+        ];
+
+        $pdo = new PDO($dsn, $username, $password, $options);
+        $pdo->exec("SET TIME ZONE 'Asia/Bangkok'");
+        return $pdo;
+    }
+
+    // Local MAMP development may still use the original MySQL database.
     $options = [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
@@ -30,14 +58,14 @@ function db(): PDO
     elseif (DB_NAME === 'studbolt_stocks') $databasesToTry[] = 'studbolt_stock';
 
     $lastException = null;
-    foreach ($passwordsToTry as $p) {
-        foreach ($databasesToTry as $db) {
+    foreach ($passwordsToTry as $password) {
+        foreach ($databasesToTry as $database) {
             try {
-                $dsn = 'mysql:host=' . DB_HOST . ';dbname=' . $db . ';charset=utf8mb4';
-                $pdo = new PDO($dsn, DB_USER, $p, $options);
+                $dsn = 'mysql:host=' . DB_HOST . ';dbname=' . $database . ';charset=utf8mb4';
+                $pdo = new PDO($dsn, DB_USER, $password, $options);
                 return $pdo;
-            } catch (PDOException $e) {
-                $lastException = $e;
+            } catch (PDOException $exception) {
+                $lastException = $exception;
             }
         }
     }
