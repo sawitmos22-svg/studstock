@@ -355,7 +355,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'products' && $manager) {
         'SELECT sku, size_mm, diameter_mm, length_mm, grade, standard_name, description, qty, min_qty, location_code
          FROM products
          WHERE active = 1
-         ORDER BY CASE WHEN size_mm ~ '^[0-9]+([.][0-9]+)?$' THEN size_mm::numeric END, length_mm, grade'
+         ORDER BY CASE WHEN size_mm ~ \'^[0-9]+([.][0-9]+)?$\' THEN size_mm::numeric END, length_mm, grade'
     )->fetchAll();
 
     header('Content-Type: text/csv; charset=UTF-8');
@@ -455,7 +455,7 @@ if ($page === 'accounts') {
 }
 
 $databaseProducts = db()->query(
-    'SELECT * FROM products WHERE active = 1 ORDER BY CASE WHEN size_mm ~ '^[0-9]+([.][0-9]+)?$' THEN size_mm::numeric END, length_mm, grade'
+    'SELECT * FROM products WHERE active = 1 ORDER BY CASE WHEN size_mm ~ \'^[0-9]+([.][0-9]+)?$\' THEN size_mm::numeric END, length_mm, grade'
 )->fetchAll();
 $productsBySku = [];
 foreach ($databaseProducts as $product) {
