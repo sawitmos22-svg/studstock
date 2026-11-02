@@ -1,7 +1,54 @@
 <?php
 declare(strict_types=1);
-session_start();
 date_default_timezone_set('Asia/Bangkok');
+
+class SupabaseSessionHandler implements SessionHandlerInterface
+{
+    public function open(string $path, string $name): bool { return true; }
+    public function close(): bool { return true; }
+
+    public function read(string $id): string|false
+    {
+        $statement = db()->prepare('SELECT data FROM app_sessions WHERE id = ? AND last_activity >= ?');
+        $statement->execute([$id, time() - (int) ini_get('session.gc_maxlifetime')]);
+        $data = $statement->fetchColumn();
+        return $data === false ? '' : (string) $data;
+    }
+
+    public function write(string $id, string $data): bool
+    {
+        $statement = db()->prepare(
+            'INSERT INTO app_sessions (id, data, last_activity) VALUES (?, ?, ?)
+             ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, last_activity = EXCLUDED.last_activity'
+        );
+        return $statement->execute([$id, $data, time()]);
+    }
+
+    public function destroy(string $id): bool
+    {
+        $statement = db()->prepare('DELETE FROM app_sessions WHERE id = ?');
+        return $statement->execute([$id]);
+    }
+
+    public function gc(int $max_lifetime): int|false
+    {
+        $statement = db()->prepare('DELETE FROM app_sessions WHERE last_activity < ?');
+        $statement->execute([time() - $max_lifetime]);
+        return $statement->rowCount();
+    }
+}
+
+if (getenv('POSTGRES_URL_NON_POOLING') || getenv('POSTGRES_URL')) {
+    session_set_save_handler(new SupabaseSessionHandler(), true);
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path' => '/',
+        'secure' => true,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+}
+session_start();
 
 define('DB_HOST', getenv('DB_HOST') ?: 'localhost');
 define('DB_NAME', getenv('DB_NAME') ?: 'studbolt_stocks');
