@@ -701,7 +701,7 @@ try {
                     $product['min_qty'],
                     $product['location_code'],
                 ]);
-                $productId = (int) $pdo->lastInsertId();
+                $productId = (int) $pdo->lastInsertId('products_id_seq');
             }
             if ($existingId === false && $product['qty'] > 0) {
                 $initialStock->execute([
@@ -912,7 +912,7 @@ try {
                 trim($data['job_ref'] ?? ''),
                 trim($data['note'] ?? ''),
             ]);
-            $requestId = (int) $pdo->lastInsertId();
+            $requestId = (int) $pdo->lastInsertId('stock_requests_id_seq');
             $requestTypeLabel = $type === 'OUT' ? 'เบิกออก' : ($type === 'IN' ? 'รับเข้า' : 'ปรับยอด');
             $log = $pdo->prepare(
                 "INSERT INTO activity_logs (user_id, username, full_name, event_type, details)
@@ -958,7 +958,7 @@ try {
             trim($data['job_ref'] ?? ''),
             trim($data['note'] ?? ''),
         ]);
-        $id = (int) $pdo->lastInsertId();
+        $id = (int) $pdo->lastInsertId('transactions_id_seq');
         $pdo->commit();
         respond(['ok' => true, 'id' => $id, 'balance_after' => $balance]);
     }
@@ -995,7 +995,7 @@ try {
             $min,
             trim($data['location_code'] ?? ''),
         ]);
-        $productId = (int) $pdo->lastInsertId();
+        $productId = (int) $pdo->lastInsertId('products_id_seq');
         if ($qty > 0) {
             $initialStock = $pdo->prepare(
                 "INSERT INTO transactions (product_id, user_id, user_username, user_full_name, txn_type, qty, balance_after, note)
