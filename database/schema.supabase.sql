@@ -92,3 +92,10 @@ DROP TRIGGER IF EXISTS products_updated_at ON products;
 CREATE TRIGGER products_updated_at
 BEFORE UPDATE ON products
 FOR EACH ROW EXECUTE FUNCTION set_products_updated_at();
+
+CREATE TABLE IF NOT EXISTS app_sessions (
+  id VARCHAR(128) PRIMARY KEY,
+  data TEXT NOT NULL,
+  last_activity BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_app_sessions_activity ON app_sessions(last_activity);
